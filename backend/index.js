@@ -2,12 +2,15 @@ const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
 require('dotenv').config();
+const { ethers } = require('ethers');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
 const ONEINCH_API_KEY = process.env.ONEINCH_API_KEY || 'Your_1inch_API_Key';
+const TESTNET_RPC_URL = process.env.TESTNET_RPC_URL || 'https://rpc.ankr.com/eth_goerli';
+const provider = new ethers.JsonRpcProvider(TESTNET_RPC_URL);
 
 // 1inch Fusion+ quote endpoint
 app.post('/api/1inch-quote', async (req, res) => {
@@ -60,6 +63,19 @@ app.post('/api/compare', async (req, res) => {
       alternative: altRes.data,
       savings: null // Calculate if both prices available
     });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok' });
+});
+
+app.get('/api/network-info', async (req, res) => {
+  try {
+    const blockNumber = await provider.getBlockNumber();
+    res.json({ blockNumber });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
