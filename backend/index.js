@@ -4,7 +4,7 @@ const axios = require('axios');
 require('dotenv').config();
 const { ethers } = require('ethers');
 const { FusionSDK, NetworkEnum } = require('@1inch/fusion-sdk');
-
+const { SDK: CrossChainSdk } = require('@1inch/cross-chain-sdk');
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -19,18 +19,27 @@ const fusionSdk = new FusionSDK({
   authKey: ONEINCH_API_KEY,
 });
 
+const crossChainSdk = new CrossChainSdk({
+  url: 'https://api.1inch.dev/cross-chain',
+  authKey: ONEINCH_API_KEY,
+});
+
 // 1inch quote endpoint (classic)
 app.post('/api/1inch-quote', async (req, res) => {
   try {
     const { fromToken, toToken, amount, chainId } = req.body;
-    const quote = await fusionSdk.getQuote({
-      srcToken: fromToken,
-      dstToken: toToken,
-      amount,
-      walletAddress: '0x0000000000000000000000000000000000000000', // placeholder, not used for quote
-      chainId: chainId || NetworkEnum.ETHEREUM,
+    const url = `https://api.1inch.dev/swap/v5.2/${chainId}/quote`;
+    const response = await axios.get(url, {
+      params: {
+        src: fromToken,
+        dst: toToken,
+        amount,
+      },
+      headers: {
+        Authorization: `Bearer ${ONEINCH_API_KEY}`,
+      },
     });
-    res.json(quote);
+    res.json(response.data);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -54,14 +63,21 @@ app.post('/api/alt-quote', async (req, res) => {
 // Fusion+ quote endpoint
 app.post('/api/fusion-quote', async (req, res) => {
   try {
-    const { fromToken, toToken, amount, walletAddress, chainId } = req.body;
-    const quote = await fusionSdk.getQuote({
-      srcToken: fromToken,
-      dstToken: toToken,
+    const { srcChainId, dstChainId, srcTokenAddress, dstTokenAddress, amount, walletAddress, enableEstimate } = req.body;
+    if (!walletAddress || walletAddress.length !== 42) {
+      return res.status(400).json({ error: 'walletAddress is required and must be a valid Ethereum address.' });
+    }
+    const params = {
+      srcChainId,
+      dstChainId: dstChainId || srcChainId, // for single-chain, both are the same
+      srcTokenAddress,
+      dstTokenAddress,
       amount,
+      enableEstimate: enableEstimate !== false, // default to true
       walletAddress,
-      chainId: chainId || NetworkEnum.ETHEREUM,
-    });
+    };
+    console.log('Calling fusionSdk.getQuote with:', params);
+    const quote = await fusionSdk.getQuote(params);
     res.json(quote);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -102,14 +118,68 @@ app.post('/api/compare', async (req, res) => {
 app.post('/api/1inch-swap', async (req, res) => {
   try {
     const { fromToken, toToken, amount, fromAddress, slippage, chainId } = req.body;
-    const swap = await fusionSdk.getSwap({
-      srcToken: fromToken,
-      dstToken: toToken,
-      amount,
-      walletAddress: fromAddress,
-      slippage: slippage || 1,
-      chainId: chainId || NetworkEnum.ETHEREUM,
+    const url = `https://api.1inch.dev/swap/v5.2/${chainId}/swap`;
+    const response = await axios.get(url, {
+      params: {
+        src: fromToken,
+        dst: toToken,
+        amount,
+        from: fromAddress,
+        slippage: slippage || 1,
+        disableEstimate: false,
+      },
+      headers: {
+        Authorization: `Bearer ${ONEINCH_API_KEY}`,
+      },
     });
+    res.json(response.data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Cross-chain quote endpoint
+app.post('/api/cross-chain-quote', async (req, res) => {
+  try {
+    const { srcChainId, dstChainId, srcTokenAddress, dstTokenAddress, amount, enableEstimate, walletAddress } = req.body;
+    if (!walletAddress || walletAddress.length !== 42) {
+      return res.status(400).json({ error: 'walletAddress is required and must be a valid Ethereum address.' });
+    }
+    const params = {
+      srcChainId,
+      dstChainId,
+      srcTokenAddress,
+      dstTokenAddress,
+      amount,
+      enableEstimate: enableEstimate !== false, // default to true
+      walletAddress,
+    };
+    console.log('Calling crossChainSdk.getQuote with:', params);
+    const quote = await crossChainSdk.getQuote(params);
+    res.json(quote);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Cross-chain swap endpoint
+app.post('/api/cross-chain-swap', async (req, res) => {
+  try {
+    const { srcChainId, dstChainId, srcTokenAddress, dstTokenAddress, amount, enableEstimate, walletAddress } = req.body;
+    if (!walletAddress || walletAddress.length !== 42) {
+      return res.status(400).json({ error: 'walletAddress is required and must be a valid Ethereum address.' });
+    }
+    const params = {
+      srcChainId,
+      dstChainId,
+      srcTokenAddress,
+      dstTokenAddress,
+      amount,
+      enableEstimate: enableEstimate !== false, // default to true
+      walletAddress,
+    };
+    console.log('Calling crossChainSdk.getSwap with:', params);
+    const swap = await crossChainSdk.getSwap(params);
     res.json(swap);
   } catch (error) {
     res.status(500).json({ error: error.message });
