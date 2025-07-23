@@ -3,6 +3,7 @@ const cors = require('cors');
 const axios = require('axios');
 require('dotenv').config();
 const { ethers } = require('ethers');
+const { FusionSDK, NetworkEnum } = require('@1inch/fusion-sdk');
 
 const app = express();
 app.use(cors());
@@ -12,23 +13,24 @@ const ONEINCH_API_KEY = process.env.ONEINCH_API_KEY || 'Your_1inch_API_Key';
 const TESTNET_RPC_URL = process.env.TESTNET_RPC_URL || 'https://rpc.ankr.com/eth_goerli';
 const provider = new ethers.JsonRpcProvider(TESTNET_RPC_URL);
 
-// 1inch Fusion+ quote endpoint
+const fusionSdk = new FusionSDK({
+  url: 'https://api.1inch.dev/fusion',
+  network: NetworkEnum.ETHEREUM,
+  authKey: ONEINCH_API_KEY,
+});
+
+// 1inch quote endpoint (classic)
 app.post('/api/1inch-quote', async (req, res) => {
   try {
     const { fromToken, toToken, amount, chainId } = req.body;
-    // Example endpoint, update as needed for Fusion+
-    const url = `https://api.1inch.dev/swap/v5.2/${chainId}/quote`;
-    const response = await axios.get(url, {
-      params: {
-        src: fromToken,
-        dst: toToken,
-        amount,
-      },
-      headers: {
-        Authorization: `Bearer ${ONEINCH_API_KEY}`,
-      },
+    const quote = await fusionSdk.getQuote({
+      srcToken: fromToken,
+      dstToken: toToken,
+      amount,
+      walletAddress: '0x0000000000000000000000000000000000000000', // placeholder, not used for quote
+      chainId: chainId || NetworkEnum.ETHEREUM,
     });
-    res.json(response.data);
+    res.json(quote);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -53,19 +55,14 @@ app.post('/api/alt-quote', async (req, res) => {
 app.post('/api/fusion-quote', async (req, res) => {
   try {
     const { fromToken, toToken, amount, walletAddress, chainId } = req.body;
-    const url = `https://api.1inch.dev/fusion/quote/v1.0/${chainId}/quote`; // Fusion+ quote endpoint
-    const response = await axios.post(url, {
-      src: fromToken,
-      dst: toToken,
+    const quote = await fusionSdk.getQuote({
+      srcToken: fromToken,
+      dstToken: toToken,
       amount,
-      walletAddress
-    }, {
-      headers: {
-        Authorization: `Bearer ${ONEINCH_API_KEY}`,
-        'Content-Type': 'application/json'
-      }
+      walletAddress,
+      chainId: chainId || NetworkEnum.ETHEREUM,
     });
-    res.json(response.data);
+    res.json(quote);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -75,14 +72,8 @@ app.post('/api/fusion-quote', async (req, res) => {
 app.post('/api/fusion-order', async (req, res) => {
   try {
     // The body should include all required Fusion+ order params
-    const url = `https://api.1inch.dev/fusion/order/v1.0/order`; // Fusion+ order endpoint
-    const response = await axios.post(url, req.body, {
-      headers: {
-        Authorization: `Bearer ${ONEINCH_API_KEY}`,
-        'Content-Type': 'application/json'
-      }
-    });
-    res.json(response.data);
+    const order = await fusionSdk.placeOrder(req.body);
+    res.json(order);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -93,12 +84,12 @@ app.post('/api/compare', async (req, res) => {
   try {
     const { fromToken, toToken, amount, chainId } = req.body;
     // Get 1inch quote
-    const oneInchRes = await axios.post('http://localhost:3001/api/1inch-quote', { fromToken, toToken, amount, chainId });
+    const oneInchRes = await fusionSdk.getQuote({ fromToken, toToken, amount, walletAddress: '0x0000000000000000000000000000000000000000', chainId: chainId || NetworkEnum.ETHEREUM });
     // Get alternative quote
     const altRes = await axios.post('http://localhost:3001/api/alt-quote', { fromToken, toToken, amount, chainId });
     // Calculate savings (if possible)
     res.json({
-      oneInch: oneInchRes.data,
+      oneInch: oneInchRes,
       alternative: altRes.data,
       savings: null // Calculate if both prices available
     });
@@ -107,24 +98,19 @@ app.post('/api/compare', async (req, res) => {
   }
 });
 
+// 1inch swap endpoint (classic)
 app.post('/api/1inch-swap', async (req, res) => {
   try {
     const { fromToken, toToken, amount, fromAddress, slippage, chainId } = req.body;
-    const url = `https://api.1inch.dev/swap/v5.2/${chainId}/swap`;
-    const response = await axios.get(url, {
-      params: {
-        src: fromToken,
-        dst: toToken,
-        amount,
-        from: fromAddress,
-        slippage: slippage || 1, // default 1% slippage
-        disableEstimate: false, // get estimate only, do not send tx
-      },
-      headers: {
-        Authorization: `Bearer ${ONEINCH_API_KEY}`,
-      },
+    const swap = await fusionSdk.getSwap({
+      srcToken: fromToken,
+      dstToken: toToken,
+      amount,
+      walletAddress: fromAddress,
+      slippage: slippage || 1,
+      chainId: chainId || NetworkEnum.ETHEREUM,
     });
-    res.json(response.data);
+    res.json(swap);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
