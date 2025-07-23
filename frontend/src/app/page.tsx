@@ -2,119 +2,224 @@
 
 import { useState } from "react";
 
-const TOKEN_PAIRS = [
-  { from: { symbol: "ETH", address: "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", chainId: 5 }, to: { symbol: "USDC", address: "0x07865c6e87b9f70255377e024ace6630c1eaa37f", chainId: 421613 } }, // Goerli ETH to Arbitrum USDC
-  { from: { symbol: "USDC", address: "0x07865c6e87b9f70255377e024ace6630c1eaa37f", chainId: 5 }, to: { symbol: "ETH", address: "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", chainId: 421613 } }, // Goerli USDC to Arbitrum ETH
-  { from: { symbol: "DAI", address: "0x11fE4B6AE13d2a6055C8D9cF65c55bac32B5d844", chainId: 5 }, to: { symbol: "USDT", address: "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9", chainId: 421613 } }, // Goerli DAI to Arbitrum USDT
-  { from: { symbol: "WBTC", address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", chainId: 5 }, to: { symbol: "ETH", address: "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", chainId: 421613 } }, // Goerli WBTC to Arbitrum ETH
-  { from: { symbol: "USDT", address: "0x509Ee0d083DdF8AC028f2a56731412edD63223B9", chainId: 5 }, to: { symbol: "DAI", address: "0x11fE4B6AE13d2a6055C8D9cF65c55bac32B5d844", chainId: 421613 } }, // Goerli USDT to Arbitrum DAI
+const TOKENS = [
+  { symbol: "ETH", name: "Ethereum" },
+  { symbol: "BTC", name: "Bitcoin" },
+  { symbol: "USDT", name: "Tether" },
+  { symbol: "USDC", name: "USD Coin" },
+  { symbol: "DAI", name: "Dai" },
 ];
 
 export default function Home() {
+  const [activeTab, setActiveTab] = useState("Swap");
+  const [fromToken, setFromToken] = useState(TOKENS[0]);
+  const [toToken, setToToken] = useState(TOKENS[1]);
+  const [fromAmount, setFromAmount] = useState("");
+  const [showFromDropdown, setShowFromDropdown] = useState(false);
+  const [showToDropdown, setShowToDropdown] = useState(false);
   const [wallet, setWallet] = useState<string | null>(null);
-  const [selectedPair, setSelectedPair] = useState(0);
-  const [quote, setQuote] = useState<any>(null);
-  const [altQuote, setAltQuote] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
+  const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  // Wallet connect logic (MetaMask)
+  // Prevent selecting the same token for both
+  const availableToTokens = TOKENS.filter(t => t.symbol !== fromToken.symbol);
+  const availableFromTokens = TOKENS.filter(t => t.symbol !== toToken.symbol);
+
+  // MetaMask connect logic
   const connectWallet = async () => {
-    if (typeof window.ethereum !== "undefined") {
-      try {
-        const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
+    setError(null);
+    setConnecting(true);
+    try {
+      if (typeof window !== 'undefined' && (window as any).ethereum) {
+        const accounts = await (window as any).ethereum.request({ method: 'eth_requestAccounts' });
         setWallet(accounts[0]);
-      } catch (err) {
-        setError("Wallet connection failed");
+      } else {
+        setError('MetaMask not found');
       }
-    } else {
-      setError("MetaMask not found");
+    } catch (err: any) {
+      setError('Wallet connection failed');
     }
+    setConnecting(false);
   };
 
-  // Fetch quotes from backend
-  const fetchQuotes = async () => {
-    setLoading(true);
-    setError(null);
-    setQuote(null);
-    setAltQuote(null);
-    const pair = TOKEN_PAIRS[selectedPair];
-    try {
-      const res = await fetch("http://localhost:3001/api/compare", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fromToken: pair.from.address,
-          toToken: pair.to.address,
-          amount: "1000000000000000000000", // 1000 * 1e18 (example, adjust per token decimals)
-          chainId: pair.from.chainId,
-        }),
-      });
-      const data = await res.json();
-      setQuote(data.oneInch);
-      setAltQuote(data.alternative);
-    } catch (err) {
-      setError("Failed to fetch quotes");
-    }
-    setLoading(false);
+  const disconnectWallet = () => {
+    setWallet(null);
   };
+
+  // Validation logic
+  const minAmount = 0.0045;
+  const maxAmount = 1000;
+  let validationMessage = null;
+  if (!fromAmount || Number(fromAmount) <= 0) {
+    validationMessage = 'Enter a valid amount.';
+  } else if (fromToken.symbol === 'ETH' && Number(fromAmount) < minAmount) {
+    validationMessage = `Base currency amount is below the minimum of ${minAmount} ETH`;
+  } else if (Number(fromAmount) > maxAmount) {
+    validationMessage = `Amount exceeds the maximum allowed (${maxAmount}).`;
+  }
+  if (error) validationMessage = error;
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 text-gray-900 p-4">
-      <div className="w-full max-w-md bg-white rounded-xl shadow-lg p-8 flex flex-col gap-6">
-        <h1 className="text-2xl font-bold text-center mb-2">Fusion+ Cross-Chain Swap (Testnet)</h1>
-        <button
-          onClick={connectWallet}
-          className="w-full py-2 px-4 rounded bg-blue-600 text-white font-semibold hover:bg-blue-700 transition"
-        >
-          {wallet ? `Connected: ${wallet.slice(0, 6)}...${wallet.slice(-4)}` : "Connect MetaMask"}
-        </button>
-        <div>
-          <label className="block mb-1 font-medium">Token Pair</label>
-          <select
-            className="w-full border rounded p-2"
-            value={selectedPair}
-            onChange={e => setSelectedPair(Number(e.target.value))}
+    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="w-full max-w-xl bg-white rounded-2xl shadow-2xl p-6 sm:p-10 flex flex-col gap-8">
+        {/* Tabs */}
+        <div className="flex justify-center mb-2">
+          {['Buy', 'Sell', 'Swap'].map(tab => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`px-4 sm:px-6 py-2 text-base sm:text-lg font-semibold border-b-2 transition-colors duration-200 focus:outline-none
+                ${activeTab === tab ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-blue-600'}`}
+              style={{ marginRight: tab !== 'Swap' ? '0.5rem' : 0 }}
+              type="button"
+            >
+              {tab}
+            </button>
+          ))}
+        </div>
+        {/* Divider */}
+        <div className="border-b border-gray-200 mb-2" />
+        {/* Title and subtitle */}
+        <div className="flex flex-col items-start gap-2">
+          <div className="flex items-center gap-2">
+            <span className="inline-block bg-blue-100 text-blue-600 rounded-full p-2">
+              {/* Ethereum icon placeholder */}
+              <svg width="24" height="24" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="12" fill="#e6f0fa"/><path d="M12 3L12.1 3.3V16.6L12 16.7L12 3Z" fill="#627EEA"/><path d="M12 3L11.9 3.3V16.6L12 16.7L12 3Z" fill="#627EEA"/><path d="M12 17.8L12.1 17.9V20.7L12 21L12 17.8Z" fill="#627EEA"/><path d="M12 17.8L11.9 17.9V20.7L12 21L12 17.8Z" fill="#627EEA"/><path d="M12 16.7L18.2 13.2L12 3V16.7Z" fill="#627EEA"/><path d="M12 16.7L5.8 13.2L12 3V16.7Z" fill="#627EEA"/><path d="M12 17.8L18.2 14.3L12 21V17.8Z" fill="#627EEA"/><path d="M12 17.8L5.8 14.3L12 21V17.8Z" fill="#627EEA"/></svg>
+            </span>
+            <h1 className="text-2xl sm:text-3xl font-bold">Swap Ethereum seamlessly.</h1>
+          </div>
+          <p className="text-gray-600 text-base sm:text-lg mt-2">
+            Swap Ethereum quickly and securely, across multiple chains and wallets. It’s all there in your account.
+          </p>
+        </div>
+        {/* Divider */}
+        <div className="border-b border-gray-200" />
+        {/* Swap form UI */}
+        <div className="flex flex-col gap-4 w-full relative">
+          {/* Loading overlay */}
+          {loading && (
+            <div className="absolute inset-0 bg-white bg-opacity-70 flex flex-col items-center justify-center z-20 rounded-lg">
+              <svg className="animate-spin h-8 w-8 text-blue-600 mb-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
+              <span className="text-blue-600 font-medium">Fetching quote...</span>
+            </div>
+          )}
+          {/* From input */}
+          <div className="flex items-center bg-gray-50 rounded-lg px-3 sm:px-4 py-2 sm:py-3 border border-gray-200 relative">
+            <input
+              type="number"
+              placeholder="0.00"
+              className="flex-1 bg-transparent outline-none text-lg sm:text-xl font-semibold"
+              value={fromAmount}
+              onChange={e => setFromAmount(e.target.value)}
+              min="0"
+            />
+            <div className="relative">
+              <button
+                className="flex items-center gap-2 px-2 sm:px-3 py-1 bg-white border border-gray-300 rounded-lg ml-2 sm:ml-3 text-gray-700 font-medium"
+                type="button"
+                onClick={() => setShowFromDropdown(v => !v)}
+              >
+                <span className="hidden sm:inline-block">
+                  <svg width="18" height="18" fill="none" viewBox="0 0 24 24" className="mr-1"><circle cx="12" cy="12" r="10" fill="#e6f0fa"/><text x="12" y="16" textAnchor="middle" fontSize="12" fill="#627EEA">{fromToken.symbol[0]}</text></svg>
+                </span>
+                {fromToken.symbol}
+                <svg width="16" height="16" fill="none" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4" stroke="#555" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              </button>
+              {showFromDropdown && (
+                <div className="absolute z-10 left-0 mt-2 w-32 bg-white border border-gray-200 rounded-lg shadow-lg">
+                  {availableFromTokens.map(token => (
+                    <div
+                      key={token.symbol}
+                      className="px-4 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2"
+                      onClick={() => { setFromToken(token); setShowFromDropdown(false); }}
+                    >
+                      <svg width="18" height="18" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#e6f0fa"/><text x="12" y="16" textAnchor="middle" fontSize="12" fill="#627EEA">{token.symbol[0]}</text></svg>
+                      {token.symbol} <span className="text-xs text-gray-400">{token.name}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+          {/* Swap arrow */}
+          <div className="flex justify-center">
+            <span className="inline-block bg-gray-100 rounded-full p-2 border border-gray-200">
+              <svg width="24" height="24" fill="none" viewBox="0 0 24 24"><path d="M12 5v14m0 0l-5-5m5 5l5-5" stroke="#888" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            </span>
+          </div>
+          {/* To input */}
+          <div className="flex items-center bg-gray-50 rounded-lg px-3 sm:px-4 py-2 sm:py-3 border border-gray-200 relative">
+            <input
+              type="number"
+              placeholder="0.00"
+              className="flex-1 bg-transparent outline-none text-lg sm:text-xl font-semibold"
+              value={""}
+              disabled
+            />
+            <div className="relative">
+              <button
+                className="flex items-center gap-2 px-2 sm:px-3 py-1 bg-white border border-gray-300 rounded-lg ml-2 sm:ml-3 text-gray-700 font-medium"
+                type="button"
+                onClick={() => setShowToDropdown(v => !v)}
+              >
+                <span className="hidden sm:inline-block">
+                  <svg width="18" height="18" fill="none" viewBox="0 0 24 24" className="mr-1"><circle cx="12" cy="12" r="10" fill="#e6f0fa"/><text x="12" y="16" textAnchor="middle" fontSize="12" fill="#627EEA">{toToken.symbol[0]}</text></svg>
+                </span>
+                {toToken.symbol}
+                <svg width="16" height="16" fill="none" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4" stroke="#555" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              </button>
+              {showToDropdown && (
+                <div className="absolute z-10 left-0 mt-2 w-32 bg-white border border-gray-200 rounded-lg shadow-lg">
+                  {availableToTokens.map(token => (
+                    <div
+                      key={token.symbol}
+                      className="px-4 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2"
+                      onClick={() => { setToToken(token); setShowToDropdown(false); }}
+                    >
+                      <svg width="18" height="18" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#e6f0fa"/><text x="12" y="16" textAnchor="middle" fontSize="12" fill="#627EEA">{token.symbol[0]}</text></svg>
+                      {token.symbol} <span className="text-xs text-gray-400">{token.name}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+          {/* Error/warning message placeholder */}
+          <div className="text-red-500 text-sm text-center min-h-[1.5em]">{validationMessage}</div>
+          {/* Call-to-action button */}
+          {wallet ? (
+            <button
+              className="w-full py-3 px-4 rounded-lg bg-green-600 text-white text-lg font-semibold hover:bg-green-700 transition mt-2"
+              onClick={disconnectWallet}
+              type="button"
+            >
+              Connected: {wallet.slice(0, 6)}...{wallet.slice(-4)} (Disconnect)
+            </button>
+          ) : (
+            <button
+              className="w-full py-3 px-4 rounded-lg bg-purple-600 text-white text-lg font-semibold hover:bg-purple-700 transition mt-2 disabled:opacity-60"
+              onClick={connectWallet}
+              type="button"
+              disabled={connecting}
+            >
+              {connecting ? 'Connecting...' : 'Connect MetaMask'}
+            </button>
+          )}
+          {/* Temporary button to simulate loading */}
+          <button
+            className="w-full py-2 px-4 rounded-lg bg-blue-100 text-blue-700 font-medium mt-2"
+            type="button"
+            onClick={() => { setLoading(true); setTimeout(() => setLoading(false), 2000); }}
           >
-            {TOKEN_PAIRS.map((pair, i) => (
-              <option key={i} value={i}>
-                {pair.from.symbol} ({pair.from.chainId === 5 ? "Ethereum Goerli" : "Arbitrum"}) → {pair.to.symbol} ({pair.to.chainId === 5 ? "Ethereum Goerli" : "Arbitrum"})
-              </option>
-            ))}
-          </select>
+            Simulate Fetch Quote
+          </button>
         </div>
-        <div className="flex flex-col gap-1">
-          <span className="font-medium">Amount</span>
-          <span className="text-lg">$1,000 (fixed)</span>
-        </div>
-        <button
-          onClick={fetchQuotes}
-          className="w-full py-2 px-4 rounded bg-green-600 text-white font-semibold hover:bg-green-700 transition"
-          disabled={loading}
-        >
-          {loading ? "Fetching Quotes..." : "Get Quotes"}
-        </button>
-        {error && <div className="text-red-600 text-center">{error}</div>}
-        {quote && (
-          <div className="bg-gray-100 rounded p-4 mt-2">
-            <div className="font-semibold mb-1">1inch Fusion+ Quote</div>
-            <pre className="text-xs whitespace-pre-wrap">{JSON.stringify(quote, null, 2)}</pre>
-          </div>
-        )}
-        {altQuote && (
-          <div className="bg-gray-100 rounded p-4 mt-2">
-            <div className="font-semibold mb-1">Alternative DEX Quote</div>
-            <pre className="text-xs whitespace-pre-wrap">{JSON.stringify(altQuote, null, 2)}</pre>
-          </div>
-        )}
-        <button
-          className="w-full py-2 px-4 rounded bg-purple-600 text-white font-semibold hover:bg-purple-700 transition mt-2"
-          disabled={!wallet || !quote}
-        >
-          Swap (Coming Soon)
-        </button>
-        <div className="text-xs text-gray-500 text-center mt-4">
-          This is just a test, no legal responsibility.
+        {/* Divider */}
+        <div className="border-b border-gray-200" />
+        {/* Quote/result display area */}
+        <div className="w-full bg-gray-50 border border-gray-200 rounded-xl p-5 mt-2 min-h-[64px] flex items-center justify-center text-gray-500 text-base">
+          Your quote will appear here.
         </div>
       </div>
     </div>
