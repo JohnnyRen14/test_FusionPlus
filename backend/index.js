@@ -68,6 +68,29 @@ app.post('/api/compare', async (req, res) => {
   }
 });
 
+app.post('/api/1inch-swap', async (req, res) => {
+  try {
+    const { fromToken, toToken, amount, fromAddress, slippage, chainId } = req.body;
+    const url = `https://api.1inch.dev/swap/v5.2/${chainId}/swap`;
+    const response = await axios.get(url, {
+      params: {
+        src: fromToken,
+        dst: toToken,
+        amount,
+        from: fromAddress,
+        slippage: slippage || 1, // default 1% slippage
+        disableEstimate: false, // get estimate only, do not send tx
+      },
+      headers: {
+        Authorization: `Bearer ${ONEINCH_API_KEY}`,
+      },
+    });
+    res.json(response.data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
 });
