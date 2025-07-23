@@ -49,6 +49,45 @@ app.post('/api/alt-quote', async (req, res) => {
   }
 });
 
+// Fusion+ quote endpoint
+app.post('/api/fusion-quote', async (req, res) => {
+  try {
+    const { fromToken, toToken, amount, walletAddress, chainId } = req.body;
+    const url = `https://api.1inch.dev/fusion/quote/v1.0/${chainId}/quote`; // Fusion+ quote endpoint
+    const response = await axios.post(url, {
+      src: fromToken,
+      dst: toToken,
+      amount,
+      walletAddress
+    }, {
+      headers: {
+        Authorization: `Bearer ${ONEINCH_API_KEY}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    res.json(response.data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Fusion+ order endpoint
+app.post('/api/fusion-order', async (req, res) => {
+  try {
+    // The body should include all required Fusion+ order params
+    const url = `https://api.1inch.dev/fusion/order/v1.0/order`; // Fusion+ order endpoint
+    const response = await axios.post(url, req.body, {
+      headers: {
+        Authorization: `Bearer ${ONEINCH_API_KEY}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    res.json(response.data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Comparison endpoint
 app.post('/api/compare', async (req, res) => {
   try {
